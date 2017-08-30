@@ -76,6 +76,7 @@ function router(req, res) {
 							} else {
 								fields.push(newField);
 							}
+							offseted = false;
 							contentStart = false;
 							// 结束即是开始
 							starting = true;
