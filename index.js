@@ -56,7 +56,12 @@ function router(req, res) {
 					newArray.push(i);
 				}
 			}
-			var fields = [], files = [], starting = false, newField = {isFile: false};
+			var fields = [],                // 存放普通form控件参数，input[type=file]以外的控件
+				files = [],                 // 存放input[type=file]提交的文件
+				starting = false,           // 是否为一个参数的开始
+				contentStart = false,       // 是否开始为内容，防止二进制内容中有空行，如: 上传的文本文件内容存在空行
+				offseted = false,           // 记录第一次读取内容的读取(因记录的换行符位置而变)
+				newField = {isFile: false}; // 临时存放提交的参数
 			// 根据分界符将所有数据取出
 			for (var x = 0; x < newArray.length; x++) {
 				if (newArray[x+1]) {
@@ -71,13 +76,19 @@ function router(req, res) {
 							} else {
 								fields.push(newField);
 							}
+							contentStart = false;
 							// 结束即是开始
 							starting = true;
 							newField = {isFile: false};
 							// console.log("Strat: ", x);
 						}
 					} else if (isEmptyLine(chunk)) {
-						continue;
+						if (!contentStart) {
+							contentStart = true;
+							continue;
+						} else {
+							newField.isFile && newField.filename && newField.data.push(buffer.slice(newArray[x], newArray[x+1]));
+						}
 					} else if (isFieldName(chunk)) {
 						newField.name = chunk.match(/name="(\w+)"/)[1];
 						if (chunk.indexOf("filename") != -1) {
@@ -92,11 +103,17 @@ function router(req, res) {
 					} else {
 						if (newField.isFile) {
 							newField.data = newField.data || [];
-							newField.data.push(buffer.slice(newArray[x]+2, newArray[x+1]));
+							if (offseted) {
+								newField.data.push(buffer.slice(newArray[x], newArray[x+1]));
+							} else {
+								newField.data.push(buffer.slice(newArray[x]+2, newArray[x+1]));
+								offseted = true;
+							}
 						} else {
 							newField.value = chunk.replace(/^\r\n|\r\n$/, "");
 						}
 					}
+					// console.log(chunk.replace(/\r\n/g, "\\r\\n"));// 将换行符替换成可显示的字符串
 				}
 			}
 			//
@@ -190,14 +207,28 @@ const server = http.createServer(router);
 server.listen(8080);
 
 /*
------------------------------15418682329860\r\n
-Content-Disposition: form-data; name': '"mytext"\r\n\r\n
+POST 提交的数据格式如下:
+  每行数据结尾都有\r\n换行(便于观察在下面假数据中每行都加上了\r\n)
+  记录所有换行的位置即可得到一行数据，再处理每一行数据即可
+  “-----------------------------135152451731465”为边界分隔符，由浏览器生成，可通过请求头的Content-Type获取到
+  每一个参数的数据都在两个边界分隔符中间，包含参数名(name)、参数值、文件名(filename)等属性
 
+
+-----------------------------135152451731465\r\n
+Content-Disposition: form-data; name="text"\r\n
+\r\n
 hello world!\r\n
------------------------------15418682329860\r\n
-Content-Disposition: form-data; name="myfile"; filename=""\r\n
-Content-Type: application/octet-stream\r\n\r\n\r\n
-
-
------------------------------15418682329860--\r\n
+-----------------------------135152451731465\r\n
+Content-Disposition: form-data; name="image"; filename="test.gif"\r\n
+Content-Type: application/octet-stream\r\n
+\r\n
+(二进制数据)\r\n
+-----------------------------135152451731465\r\n
+Content-Disposition: form-data; name="text"; filename="test.txt"\r\n
+Content-Type: text/plain\r\n
+\r\n
+Hello World\r\n
+\r\n
+Test Content\r\n
+-----------------------------135152451731465--
 */
